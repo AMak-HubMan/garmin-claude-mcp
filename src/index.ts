@@ -121,9 +121,9 @@ export class MyMCP extends McpAgent {
 
         const existingDate = existing.start_date_local?.slice(0, 10);
 
-        if (!existingDate || existingDate <= todayMelbourne) {
-          throw new Error("Cannot update past or same-day workouts.");
-        }
+if (!existingDate || existingDate < todayMelbourne) {
+  throw new Error("Cannot update past workouts.");
+}
 
         if (date) {
           const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
