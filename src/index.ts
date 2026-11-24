@@ -70,6 +70,24 @@ export class MyMCP extends McpAgent {
         description: z.string().describe("Structured steps, e.g. '- 10m Z2\\n- 6x800m Z4, 400m Z1 jog\\n- 10m Z2'"),
       },
       async ({ date, name, type, description }) => {
+        const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+          && !Number.isNaN(Date.parse(`${date}T00:00:00Z`))
+          && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date;
+
+        if (!validDate) {
+          throw new Error("Invalid date. Use YYYY-MM-DD.");
+        }
+
+        const todayMelbourne = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Melbourne",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+
+        if (date < todayMelbourne) {
+          throw new Error("Cannot create a workout in the past.");
+        }
         const data = await this.icu(`/athlete/${athlete}/events`, {
           method: "POST",
           body: JSON.stringify({ start_date_local: `${date}T00:00:00`, category: "WORKOUT", type, name, description }),
@@ -88,24 +106,76 @@ export class MyMCP extends McpAgent {
         description: z.string().optional(),
       },
       async ({ eventId, date, name, type, description }) => {
+        const existing = await this.icu(`/athlete/${athlete}/events/${eventId}`);
+
+        if (!existing || existing.category !== "WORKOUT") {
+          throw new Error("Cannot update: event not found or is not a planned workout.");
+        }
+
+        const todayMelbourne = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Melbourne",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+
+        const existingDate = existing.start_date_local?.slice(0, 10);
+
+        if (!existingDate || existingDate <= todayMelbourne) {
+          throw new Error("Cannot update past or same-day workouts.");
+        }
+
+        if (date) {
+          const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+            && !Number.isNaN(Date.parse(`${date}T00:00:00Z`))
+            && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date;
+
+          if (!validDate || date < todayMelbourne) {
+            throw new Error("Invalid date or cannot move a workout into the past.");
+          }
+        }
+
         const body: Record<string, unknown> = {};
         if (date) body.start_date_local = `${date}T00:00:00`;
         if (name) body.name = name;
         if (type) body.type = type;
         if (description) body.description = description;
+
         const data = await this.icu(`/athlete/${athlete}/events/${eventId}`, {
           method: "PUT",
           body: JSON.stringify(body),
         });
+
         return { content: [{ type: "text", text: JSON.stringify(data) }] };
       },
     );
-
     this.server.tool(
       "deleteEvent",
       { eventId: z.number().describe("Event ID from listUpcomingEvents") },
       async ({ eventId }) => {
-        const data = await this.icu(`/athlete/${athlete}/events/${eventId}`, { method: "DELETE" });
+        const existing = await this.icu(`/athlete/${athlete}/events/${eventId}`);
+
+        if (!existing || existing.category !== "WORKOUT") {
+          throw new Error("Cannot delete: event not found or is not a planned workout.");
+        }
+
+        const todayMelbourne = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Melbourne",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+
+        const existingDate = existing.start_date_local?.slice(0, 10);
+
+        if (!existingDate || existingDate <= todayMelbourne) {
+          throw new Error("Cannot delete past or same-day workouts.");
+        }
+
+        const data = await this.icu(`/athlete/${athlete}/events/${eventId}`, {
+          method: "DELETE",
+        });
+
         return { content: [{ type: "text", text: JSON.stringify(data) }] };
       },
     );
